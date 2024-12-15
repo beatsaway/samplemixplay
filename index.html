@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-Sample Keyboard Player</title>
+  <!-- Include fft.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fft.js/dist/fft.min.js"></script>
+  <style>
+    /* Global Styles */
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+      color: #333333;
+    }
+    h1 {
+      margin: 40px 0 20px 0;
+      font-size: 2em;
+      color: #2c3e50;
+    }
+
+    /* Drop Zones */
+    .drop-zones {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+    .drop-zone {
+      width: 220px;
+      height: 140px;
+      border: 2px dashed #bdc3c7;
+      border-radius: 8px;
+      line-height: 140px;
+      color: #bdc3c7;
+      background-color: #ecf0f1;
+      transition: border-color 0.3s, color 0.3s, background-color 0.3s;
+      position: relative;
+      cursor: pointer;
+    }
+    .drop-zone.dragover {
+      border-color: #2980b9;
+      color: #2980b9;
+      background-color: #d0e1f9;
+    }
+    .drop-zone input {
+      display: none;
+    }
+    .drop-zone span {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1em;
+    }
+
+    /* Status Messages */
+    .status {
+      margin-top: 10px;
+      font-weight: 500;
+      color: #2c3e50;
+    }
+
+    /* Controls */
+    #controls {
+      margin: 30px 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+    }
+    #controls button {
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      background-color: #3498db;
+      color: #ffffff;
+      transition: background-color 0.3s, transform 0.1s;
+    }
+    #controls button:hover {
+      background-color: #2980b9;
+    }
+    #controls button:active {
+      transform: scale(0.95);
+    }
+    #current-octave {
+      font-size: 1.1em;
+      color: #34495e;
+    }
+
+    /* Mode Selector */
+    #mode-selector {
+      margin-bottom: 30px;
+      font-size: 1em;
+      color: #34495e;
+    }
+    #mode-selector select {
+      padding: 8px 12px;
+      border-radius: 4px;
+      border: 1px solid #bdc3c7;
+      background-color: #ffffff;
+      color: #34495e;
+      cursor: pointer;
+      transition: border-color 0.3s;
+    }
+    #mode-selector select:hover {
+      border-color: #2980b9;
+    }
+
+    /* Instructions */
+    #instructions {
+      margin: 20px auto;
+      font-size: 1em;
+      max-width: 600px;
+      color: #7f8c8d;
+      line-height: 1.6;
+    }
+
+    /* On-Screen Keyboard */
+    #keyboard {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 40px;
+    }
+    .key {
+      display: inline-block;
+      width: 50px;
+      height: 50px;
+      line-height: 50px;
+      margin: 4px;
+      border: 1px solid #34495e;
+      border-radius: 4px;
+      background-color: #ecf0f1;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.2s, transform 0.1s;
+      font-size: 1em;
+      color: #34495e;
+    }
+    .key.active {
+      background-color: #2ecc71;
+      color: #ffffff;
+      transform: scale(0.95);
+    }
+
+    /* Responsive Design */
+    @media (max-width: 600px) {
+      .drop-zones {
+        flex-direction: column;
+        align-items: center;
+      }
+      .drop-zone {
+        width: 80%;
+      }
+      #controls {
+        flex-direction: column;
+        gap: 10px;
+      }
+      #keyboard {
+        gap: 6px;
+      }
+      .key {
+        width: 40px;
+        height: 40px;
+        line-height: 40px;
+        font-size: 0.9em;
+      }
+      #controls button {
+        padding: 10px 20px;
+        font-size: 14px;
+      }
+      #current-octave {
+        font-size: 1em;
+      }
+    }
+
+    /* Modal Styles */
+    .modal {
+      display: none; /* Hidden by default */
+      position: fixed; /* Stay in place */
+      z-index: 1000; /* Sit on top */
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto; /* Enable scroll if needed */
+      background-color: rgba(0, 0, 0, 0.5); /* Black w/ opacity */
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-content {
+      background-color: #ffffff;
+      margin: 20px;
+      padding: 30px;
+      border: 1px solid #bdc3c7;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      animation: fadeIn 0.3s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 1.5em;
+      color: #2c3e50;
+    }
+    .close {
+      color: #7f8c8d;
+      font-size: 1.5em;
+      font-weight: bold;
+      cursor: pointer;
+      transition: color 0.3s;
+    }
+    .close:hover {
+      color: #e74c3c;
+    }
+    .modal-body p {
+      margin: 10px 0;
+      color: #34495e;
+      line-height: 1.6;
+    }
+    .modal-footer {
+      text-align: right;
+      margin-top: 20px;
+    }
+    .modal-footer button {
+      padding: 8px 16px;
+      font-size: 1em;
+      border: none;
+      border-radius: 4px;
+      background-color: #3498db;
+      color: #ffffff;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.1s;
+    }
+    .modal-footer button:hover {
+      background-color: #2980b9;
+    }
+    .modal-footer button:active {
+      transform: scale(0.95);
+    }
+  </style>
+</head>
+<body>
+  <h1>Multi-Sample Keyboard Player</h1>
+  
+  <div class="drop-zones">
+    <div class="drop-zone" id="drop-zone-1">
+      <span>Drop Sample 1</span>
+      <input type="file" accept=".wav">
+    </div>
+    <div class="drop-zone" id="drop-zone-2">
+      <span>Drop Sample 2</span>
+      <input type="file" accept=".wav">
+    </div>
+    <div class="drop-zone" id="drop-zone-3">
+      <span>Drop Sample 3</span>
+      <input type="file" accept=".wav">
+    </div>
+  </div>
+  
+  <div class="status" id="status-1">Sample 1: Not loaded</div>
+  <div class="status" id="status-2">Sample 2: Not loaded</div>
+  <div class="status" id="status-3">Sample 3: Not loaded</div>
+  
+  <div id="controls">
+    <button id="octave-down">Octave -</button>
+    <span id="current-octave">Octave: 0</span>
+    <button id="octave-up">Octave +</button>
+  </div>
+  
+  <div id="mode-selector">
+    <label for="mode">Mode:</label>
+    <select id="mode">
+      <option value="mode1" selected>Mode 1: Time-Domain Mixing</option>
+      <option value="mode2">Mode 2: Additive Synthesis</option>
+      <option value="mode3">Mode 3: Spectral Mixing</option>
+      <option value="mode4">Mode 4: Convolution Blending</option>
+      <option value="mode5">Mode 5: Granular Synthesis</option>
+      <option value="mode6">Mode 6: Ring Modulation</option>
+    </select>
+  </div>
+  
+  <div id="instructions">
+    <p>Use keys A, S, D, F, G, H, J, K, L, ;, ' to play the scale.</p>
+    <p>Use `-` and `=` keys or the buttons above to change octaves.</p>
+    <p>Supports up to three samples.</p>
+  </div>
+  
+  <!-- On-Screen Keyboard for Visual Feedback -->
+  <div id="keyboard">
+    <div class="key" data-key="a">A</div>
+    <div class="key" data-key="s">S</div>
+    <div class="key" data-key="d">D</div>
+    <div class="key" data-key="f">F</div>
+    <div class="key" data-key="g">G</div>
+    <div class="key" data-key="h">H</div>
+    <div class="key" data-key="j">J</div>
+    <div class="key" data-key="k">K</div>
+    <div class="key" data-key="l">L</div>
+    <div class="key" data-key=";">;</div>
+    <div class="key" data-key="'">'</div>
+  </div>
+
+  <!-- Modal Structure -->
+  <div id="intro-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Welcome to Multi-Sample Keyboard Player</h2>
+        <span class="close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p><strong>How to Use:</strong></p>
+        <ul style="text-align: left; color: #34495e;">
+          <li>Drag and drop up to three WAV samples into the designated areas.</li>
+          <li>Select a blending mode from the dropdown menu.</li>
+          <li>Use your keyboard or the on-screen keys to play notes.</li>
+          <li>Adjust the octave using the buttons or keyboard shortcuts.</li>
+        </ul>
+      </div>
+      <div class="modal-footer">
+        <button id="close-modal">Get Started</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize AudioContext
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    // Variables to store the loaded samples
+    const samples = [null, null, null];
+    const statuses = [
+      document.getElementById('status-1'),
+      document.getElementById('status-2'),
+      document.getElementById('status-3')
+    ];
+
+    // Current octave shift (0 = middle octave)
+    let octaveShift = 0;
+
+    // Maximum and Minimum octave shifts
+    const MAX_OCTAVE = 4;
+    const MIN_OCTAVE = -4;
+
+    // Current blending buffer
+    let blendedBuffer = null;
+
+    // Mapping of keys to semitone offsets (C major scale)
+    const keyMap = {
+      'a': 0,    // Do (C)
+      's': 2,    // Re (D)
+      'd': 4,    // Mi (E)
+      'f': 5,    // Fa (F)
+      'g': 7,    // So (G)
+      'h': 9,    // La (A)
+      'j': 11,   // Ti (B)
+      'k': 12,   // Do (C octave)
+      'l': 14,   // Re (D octave)
+      ';': 16,   // Mi (E octave)
+      "'": 17    // Fa (F octave)
+    };
+
+    // Update current octave display
+    const currentOctaveDisplay = document.getElementById('current-octave');
+    function updateOctaveDisplay() {
+      currentOctaveDisplay.textContent = `Octave: ${octaveShift}`;
+    }
+
+    // Function to load and decode audio file
+    function loadSample(file, index) {
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const arrayBuffer = event.target.result;
+        audioCtx.decodeAudioData(arrayBuffer).then(buffer => {
+          samples[index] = buffer;
+          statuses[index].textContent = `Sample ${index + 1}: ${file.name}`;
+          console.log(`Sample ${index + 1} loaded successfully.`);
+          blendSamples();
+        }).catch(error => {
+          alert('Error decoding audio file.');
+          console.error('Decoding error:', error);
+        });
+      };
+      reader.onerror = function(error) {
+        alert('Error reading the file.');
+        console.error('FileReader error:', error);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // Handle drag and drop for all drop zones
+    const dropZones = [
+      document.getElementById('drop-zone-1'),
+      document.getElementById('drop-zone-2'),
+      document.getElementById('drop-zone-3')
+    ];
+
+    dropZones.forEach((dropZone, index) => {
+      // Click to open file dialog
+      dropZone.addEventListener('click', () => {
+        dropZone.querySelector('input').click();
+      });
+
+      // Handle file selection via dialog
+      dropZone.querySelector('input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file && isValidWav(file)) {
+          loadSample(file, index);
+        } else {
+          alert('Please select a valid WAV file.');
+        }
+      });
+
+      // Drag over
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+
+      // Drag leave
+      dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+      });
+
+      // Drop
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          const file = files[0];
+          if (isValidWav(file)) {
+            loadSample(file, index);
+          } else {
+            alert('Please drop a valid WAV file.');
+          }
+        }
+      });
+    });
+
+    // Function to validate WAV files
+    function isValidWav(file) {
+      const validTypes = ['audio/wav', 'audio/wave', 'audio/x-wav'];
+      return validTypes.includes(file.type) || file.name.toLowerCase().endsWith('.wav');
+    }
+
+    // Handle mode selection
+    const modeSelector = document.getElementById('mode');
+    let currentMode = modeSelector.value;
+
+    modeSelector.addEventListener('change', () => {
+      currentMode = modeSelector.value;
+      blendSamples();
+    });
+
+    // Function to blend samples based on the current mode
+    function blendSamples() {
+      const activeSamples = samples.filter(sample => sample !== null);
+      if (activeSamples.length === 0) {
+        blendedBuffer = null;
+        return;
+      }
+
+      switch (currentMode) {
+        case 'mode1':
+          blendMode1(activeSamples);
+          break;
+        case 'mode2':
+          blendMode2(activeSamples);
+          break;
+        case 'mode3':
+          blendMode3(activeSamples);
+          break;
+        case 'mode4':
+          blendMode4(activeSamples);
+          break;
+        case 'mode5':
+          blendMode5(activeSamples);
+          break;
+        case 'mode6':
+          blendMode6(activeSamples);
+          break;
+        default:
+          blendedBuffer = null;
+      }
+    }
+
+    // Mode 1: PCM Frame Averaging (Time-Domain Mixing)
+    function blendMode1(activeSamples) {
+      const numActiveSamples = activeSamples.length;
+
+      // Ensure all samples have the same number of channels and sample rate
+      const channels = activeSamples[0].numberOfChannels;
+      const sampleRate = activeSamples[0].sampleRate;
+      const minLength = Math.min(...activeSamples.map(sample => sample.length));
+
+      const blended = audioCtx.createBuffer(channels, minLength, sampleRate);
+
+      for (let channel = 0; channel < channels; channel++) {
+        const blendedData = blended.getChannelData(channel);
+        for (let i = 0; i < minLength; i++) {
+          let sum = 0;
+          activeSamples.forEach(sample => {
+            sum += sample.getChannelData(channel)[i];
+          });
+          blendedData[i] = sum / numActiveSamples;
+        }
+      }
+
+      blendedBuffer = blended;
+      console.log('Mode 1: Samples blended successfully.');
+    }
+
+    // Mode 2: Additive Synthesis
+    function blendMode2(activeSamples) {
+      const numActiveSamples = activeSamples.length;
+
+      // Ensure all samples have the same number of channels and sample rate
+      const channels = activeSamples[0].numberOfChannels;
+      const sampleRate = activeSamples[0].sampleRate;
+      const minLength = Math.min(...activeSamples.map(sample => sample.length));
+
+      const blended = audioCtx.createBuffer(channels, minLength, sampleRate);
+
+      for (let channel = 0; channel < channels; channel++) {
+        const blendedData = blended.getChannelData(channel);
+        for (let i = 0; i < minLength; i++) {
+          let sum = 0;
+          activeSamples.forEach(sample => {
+            sum += sample.getChannelData(channel)[i];
+          });
+          blendedData[i] = sum;
+        }
+        // Normalize to prevent clipping
+        const maxAmplitude = Math.max(...blendedData.map(Math.abs));
+        if (maxAmplitude > 1) {
+          for (let i = 0; i < minLength; i++) {
+            blendedData[i] /= maxAmplitude;
+          }
+        }
+      }
+
+      blendedBuffer = blended;
+      console.log('Mode 2: Additive Synthesis blended successfully.');
+    }
+
+    // Mode 3: Spectral Mixing (Frequency-Domain Averaging)
+    function blendMode3(activeSamples) {
+      const numActiveSamples = activeSamples.length;
+
+      // Ensure uniform sample properties
+      const channels = activeSamples[0].numberOfChannels;
+      const sampleRate = activeSamples[0].sampleRate;
+      const minLength = Math.min(...activeSamples.map(sample => sample.length));
+
+      const FFTSize = 2048; // Power of two
+      const fft = new FFT(FFTSize);
+
+      const blended = audioCtx.createBuffer(channels, minLength, sampleRate);
+
+      for (let channel = 0; channel < channels; channel++) {
+        const blendedData = blended.getChannelData(channel);
+
+        let accumulatedSpectrum = new Float32Array(FFTSize);
+
+        // Process in frames
+        for (let i = 0; i < minLength; i += FFTSize) {
+          const spectra = [];
+
+          // Get spectra from all samples
+          activeSamples.forEach(sample => {
+            const sampleData = sample.getChannelData(channel).slice(i, i + FFTSize);
+            const paddedData = new Float32Array(FFTSize);
+            paddedData.set(sampleData);
+
+            const spectrum = fft.createComplexArray();
+            fft.realTransform(spectrum, paddedData);
+            spectra.push(spectrum);
+          });
+
+          // Average spectra
+          const averagedSpectrum = fft.createComplexArray();
+          for (let j = 0; j < averagedSpectrum.length; j++) {
+            let sum = 0;
+            spectra.forEach(spectrum => {
+              sum += spectrum[j];
+            });
+            averagedSpectrum[j] = sum / numActiveSamples;
+          }
+
+          // Inverse FFT
+          const timeDomain = new Float32Array(FFTSize);
+          fft.completeSpectrum(averagedSpectrum);
+          fft.inverseTransform(averagedSpectrum, timeDomain);
+
+          // Overlap-add to blendedData
+          for (let j = 0; j < FFTSize; j++) {
+            if (i + j < minLength) {
+              blendedData[i + j] += timeDomain[j];
+            }
+          }
+        }
+        // Normalize to prevent clipping
+        const maxAmplitude = Math.max(...blendedData.map(Math.abs));
+        if (maxAmplitude > 1) {
+          for (let i = 0; i < minLength; i++) {
+            blendedData[i] /= maxAmplitude;
+          }
+        }
+      }
+
+      blendedBuffer = blended;
+      console.log('Mode 3: Spectral Mixing blended successfully.');
+    }
+
+    // Mode 4: Convolution-Based Blending
+    function blendMode4(activeSamples) {
+      if (activeSamples.length < 2) {
+        blendedBuffer = null;
+        console.warn('Mode 4 requires at least two samples.');
+        return;
+      }
+
+      const channels = activeSamples[0].numberOfChannels;
+      const sampleRate = activeSamples[0].sampleRate;
+      let minLength = Math.min(...activeSamples.map(sample => sample.length));
+
+      const blendedLength = minLength * 2 - 1;
+      const blended = audioCtx.createBuffer(channels, blendedLength, sampleRate);
+
+      for (let channel = 0; channel < channels; channel++) {
+        let convolvedData = activeSamples[0].getChannelData(channel);
+
+        for (let i = 1; i < activeSamples.length; i++) {
+          convolvedData = convolve(convolvedData, activeSamples[i].getChannelData(channel));
+        }
+
+        // Normalize to prevent clipping
+        const maxAmplitude = Math.max(...convolvedData.map(Math.abs));
+        if (maxAmplitude > 1) {
+          for (let i = 0; i < convolvedData.length; i++) {
+            convolvedData[i] /= maxAmplitude;
+          }
+        }
+
+        blended.getChannelData(channel).set(convolvedData.slice(0, blendedLength));
+      }
+
+      blendedBuffer = blended;
+      console.log('Mode 4: Convolution-Based Blending completed.');
+    }
+
+    // Helper function for convolution
+    function convolve(a, b) {
+      const result = new Float32Array(a.length + b.length - 1);
+      for (let i = 0; i < a.length; i++) {
+        for (let j = 0; j < b.length; j++) {
+          result[i + j] += a[i] * b[j];
+        }
+      }
+      return result;
+    }
+
+    // Mode 5: Granular Synthesis
+    function blendMode5(activeSamples) {
+      const channels = activeSamples[0].numberOfChannels;
+      const sampleRate = activeSamples[0].sampleRate;
+      const minLength = Math.min(...activeSamples.map(sample => sample.length));
+
+      const blended = audioCtx.createBuffer(channels, minLength, sampleRate);
+
+      const grainSize = 512; // Size of each grain
+      const overlap = 0.5;   // Overlap between grains
+
+      for (let channel = 0; channel < channels; channel++) {
+        const blendedData = blended.getChannelData(channel);
+
+        const grains = [];
+        activeSamples.forEach(sample => {
+          const sampleData = sample.getChannelData(channel);
+          const numGrains = Math.floor((minLength - grainSize) / (grainSize * (1 - overlap)));
+          for (let i = 0; i < numGrains; i++) {
+            const start = Math.floor(i * grainSize * (1 - overlap));
+            const grain = sampleData.slice(start, start + grainSize);
+            grains.push(grain);
+          }
+        });
+
+        // Shuffle grains
+        for (let i = grains.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [grains[i], grains[j]] = [grains[j], grains[i]];
+        }
+
+        // Reassemble grains
+        let writePos = 0;
+        grains.forEach(grain => {
+          for (let i = 0; i < grain.length; i++) {
+            if (writePos + i < minLength) {
+              blendedData[writePos + i] += grain[i];
+            }
+          }
+          writePos += Math.floor(grainSize * (1 - overlap));
+        });
+
+        // Normalize to prevent clipping
+        const maxAmplitude = Math.max(...blendedData.map(Math.abs));
+        if (maxAmplitude > 1) {
+          for (let i = 0; i < minLength; i++) {
+            blendedData[i] /= maxAmplitude;
+          }
+        }
+      }
+
+      blendedBuffer = blended;
+      console.log('Mode 5: Granular Synthesis completed.');
+    }
+
+    // Mode 6: Ring Modulation
+    function blendMode6(activeSamples) {
+      if (activeSamples.length < 2) {
+        blendedBuffer = null;
+        console.warn('Mode 6 requires at least two samples.');
+        return;
+      }
+
+      const channels = activeSamples[0].numberOfChannels;
+      const sampleRate = activeSamples[0].sampleRate;
+      const minLength = Math.min(...activeSamples.map(sample => sample.length));
+
+      const blended = audioCtx.createBuffer(channels, minLength, sampleRate);
+
+      for (let channel = 0; channel < channels; channel++) {
+        const dataA = activeSamples[0].getChannelData(channel);
+        const dataB = activeSamples[1].getChannelData(channel);
+        const blendedData = blended.getChannelData(channel);
+
+        for (let i = 0; i < minLength; i++) {
+          blendedData[i] = dataA[i] * dataB[i];
+        }
+
+        // Normalize to prevent clipping
+        const maxAmplitude = Math.max(...blendedData.map(Math.abs));
+        if (maxAmplitude > 1) {
+          for (let i = 0; i < minLength; i++) {
+            blendedData[i] /= maxAmplitude;
+          }
+        }
+      }
+
+      blendedBuffer = blended;
+      console.log('Mode 6: Ring Modulation completed.');
+    }
+
+    // Function to play the blended sample at a given semitone offset
+    function playSample(semitoneOffset) {
+      if (!blendedBuffer) {
+        alert('Please load at least one sample to play.');
+        return;
+      }
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = blendedBuffer;
+
+      // Calculate total semitone offset including octave shift
+      const totalSemitone = semitoneOffset + (octaveShift * 12);
+
+      // Calculate playback rate based on semitone offset
+      const playbackRate = Math.pow(2, totalSemitone / 12);
+      source.playbackRate.value = playbackRate;
+
+      // Connect to the destination (speakers)
+      source.connect(audioCtx.destination);
+      source.start(0);
+    }
+
+    // Handle keyboard events
+    document.addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+
+      // Handle octave shift keys
+      if (key === '-' || key === '_') {
+        shiftOctave(-1);
+        activateOctaveButton('octave-down');
+        return;
+      }
+      if (key === '=' || key === '+') {
+        shiftOctave(1);
+        activateOctaveButton('octave-up');
+        return;
+      }
+
+      if (keyMap.hasOwnProperty(key)) {
+        // Prevent multiple triggers if key is held down
+        if (!e.repeat) {
+          playSample(keyMap[key]);
+          activateKeyVisual(key);
+        }
+      }
+    });
+
+    // Handle on-screen key clicks
+    const onScreenKeys = document.querySelectorAll('.key');
+    onScreenKeys.forEach(keyElement => {
+      keyElement.addEventListener('click', () => {
+        const key = keyElement.getAttribute('data-key').toLowerCase();
+        if (keyMap.hasOwnProperty(key)) {
+          playSample(keyMap[key]);
+          activateKeyVisual(key);
+        }
+      });
+    });
+
+    // Handle octave shift buttons
+    const octaveDownBtn = document.getElementById('octave-down');
+    const octaveUpBtn = document.getElementById('octave-up');
+
+    octaveDownBtn.addEventListener('click', () => {
+      shiftOctave(-1);
+    });
+
+    octaveUpBtn.addEventListener('click', () => {
+      shiftOctave(1);
+    });
+
+    // Function to shift octave
+    function shiftOctave(direction) {
+      const newOctave = octaveShift + direction;
+      if (newOctave >= MIN_OCTAVE && newOctave <= MAX_OCTAVE) {
+        octaveShift = newOctave;
+        updateOctaveDisplay();
+      }
+    }
+
+    // Function to provide visual feedback for key presses
+    function activateKeyVisual(key) {
+      const keyElement = document.querySelector(`.key[data-key="${key}"]`);
+      if (keyElement) {
+        keyElement.classList.add('active');
+        setTimeout(() => {
+          keyElement.classList.remove('active');
+        }, 100);
+      }
+    }
+
+    // Function to provide visual feedback for octave buttons
+    function activateOctaveButton(buttonId) {
+      const button = document.getElementById(buttonId);
+      if (button) {
+        button.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          button.style.transform = 'scale(1)';
+        }, 100);
+      }
+    }
+
+    // Resume AudioContext on user interaction (required in some browsers)
+    function resumeAudioContext() {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // Add event listeners to resume AudioContext
+    document.body.addEventListener('click', resumeAudioContext, { once: true });
+    document.body.addEventListener('keydown', resumeAudioContext, { once: true });
+
+    // Initialize octave display
+    updateOctaveDisplay();
+
+    // Modal Functionality
+    const modal = document.getElementById('intro-modal');
+    const closeModalSpan = document.querySelector('.close');
+    const closeModalBtn = document.getElementById('close-modal');
+
+    // Show the modal on page load
+    window.onload = function() {
+      modal.style.display = 'flex';
+    }
+
+    // Close the modal when the user clicks on <span> (x)
+    closeModalSpan.onclick = function() {
+      modal.style.display = 'none';
+    }
+
+    // Close the modal when the user clicks on the button
+    closeModalBtn.onclick = function() {
+      modal.style.display = 'none';
+    }
+
+    // Close the modal when the user clicks anywhere outside of the modal content
+    window.onclick = function(event) {
+      if (event.target == modal) {
+        modal.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
